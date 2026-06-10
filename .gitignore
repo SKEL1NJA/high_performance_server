@@ -1,0 +1,4 @@
+# .gitignore
+*.o
+server
+.DS_Store
