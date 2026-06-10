@@ -1,4 +1,4 @@
 # .gitignore
 *.o
-server
+*.exe
 .DS_Store
