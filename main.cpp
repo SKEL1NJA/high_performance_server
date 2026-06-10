@@ -3,10 +3,57 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <thread>      // NEW: Required for multithreading
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
 #pragma comment(lib, "Ws2_32.lib") 
+
+void handleConnection(SOCKET clientSocket) {
+    const int BUFFER_SIZE = 4096;
+    std::vector<char> buffer(BUFFER_SIZE);
+    int bytesReceived = recv(clientSocket, buffer.data(), BUFFER_SIZE - 1, 0);
+
+    if (bytesReceived > 0) {
+        buffer[bytesReceived] = '\0'; 
+        
+        std::string request(buffer.data());
+        std::istringstream iss(request);
+        std::string method, uri, version;
+        
+        iss >> method >> uri >> version;
+        
+        std::cout << "[Thread " << std::this_thread::get_id() << "] Requested URI: " << uri << std::endl;
+
+        std::string filePath = (uri == "/") ? "index.html" : uri.substr(1) + ".html";
+        std::ifstream file(filePath, std::ios::binary);
+        std::string response;
+
+        if (file.is_open()) {
+            std::ostringstream fileStream;
+            fileStream << file.rdbuf();
+            std::string body = fileStream.str();
+
+            response = "HTTP/1.1 200 OK\r\n";
+            response += "Content-Type: text/html\r\n";
+            response += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+            response += "Connection: close\r\n\r\n"; 
+            response += body;
+        } else {
+            std::string body = "<h1>404 - File Not Found</h1>";
+            response = "HTTP/1.1 404 Not Found\r\n";
+            response += "Content-Type: text/html\r\n";
+            response += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+            response += "Connection: close\r\n\r\n";
+            response += body;
+        }
+
+        send(clientSocket, response.c_str(), response.size(), 0);
+    }
+
+    closesocket(clientSocket);
+}
+
 
 int main() {
     std::cout << "Starting High-Performance HTTP Server..." << std::endl;
@@ -54,53 +101,7 @@ int main() {
             continue; 
         }
 
-        const int BUFFER_SIZE = 4096;
-        std::vector<char> buffer(BUFFER_SIZE);
-        int bytesReceived = recv(clientSocket, buffer.data(), BUFFER_SIZE - 1, 0);
-
-        if (bytesReceived > 0) {
-            buffer[bytesReceived] = '\0'; 
-            
-            std::string request(buffer.data());
-            std::istringstream iss(request);
-            std::string method, uri, version;
-            
-            iss >> method >> uri >> version;
-            
-            std::cout << "Requested URI: " << uri << std::endl;
-
-            std::string filePath = (uri == "/") ? "index.html" : uri.substr(1) + ".html";
-            
-            std::ifstream file(filePath, std::ios::binary);
-            std::string response;
-
-            if (file.is_open()) {
-                // Read the entire file into a string
-                std::ostringstream fileStream;
-                fileStream << file.rdbuf();
-                std::string body = fileStream.str();
-
-                // Build a 200 OK Response
-                response = "HTTP/1.1 200 OK\r\n";
-                response += "Content-Type: text/html\r\n";
-                response += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-                response += "Connection: close\r\n\r\n"; // Blank line separates headers from body
-                response += body;
-            } else {
-                // Build a 404 Not Found Response
-                std::string body = "<h1>404 - File Not Found</h1>";
-                response = "HTTP/1.1 404 Not Found\r\n";
-                response += "Content-Type: text/html\r\n";
-                response += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-                response += "Connection: close\r\n\r\n";
-                response += body;
-            }
-
-            send(clientSocket, response.c_str(), response.size(), 0);
-            
-        }
-
-        closesocket(clientSocket);
+        std::thread(handleConnection, clientSocket).detach();
     }
 
     closesocket(serverSocket);
